@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -106,7 +107,12 @@ func parseReplacePattern(pattern string) ([]Pattern, error) {
 	pt := []rune(pattern)
 	idx := 0
 	read := func() rune {
-		if idx == len(pt) {
+		if idx >= len(pt) {
+			if idx == len(pt) {
+				// read beyond the input
+				// lock the idex to prevent unread()
+				idx++
+			}
 			return 0
 		}
 		var r rune
@@ -114,7 +120,7 @@ func parseReplacePattern(pattern string) ([]Pattern, error) {
 		return r
 	}
 	unread := func() {
-		if idx > 0 {
+		if 0 < idx && idx <= len(pt) {
 			idx = idx - 1
 		}
 	}
@@ -207,13 +213,12 @@ func parseReplacePattern(pattern string) ([]Pattern, error) {
 				if c != '}' {
 					return nil, ErrInvalidPattern
 				}
-				continue
+			} else {
+				unread()
 			}
-		}
+			continue
 
 		// single-length word
-		switch c {
-
 		case '*':
 			//if prevc != '*' {
 			addWord(0)
@@ -331,56 +336,20 @@ func compilePattern(patternStr string) (re *regexp.Regexp, err error) {
 			}
 			srcLen++
 		}
-		//rSrc += "(.*?)$" // rSrc[srcLen-1] is right-side all-matching
 		rSrc += "$"
-		//srcLen++
 	}
 	return regexp.Compile(rSrc)
 }
 
 // rename simple search pattern to replace pattern
-func ReplaceName(filename string, pattern *regexp.Regexp, replace []Pattern) (newname string, err error) {
-	/*
-		rSrc := ""
-		srcLen := 0
-		if len(pattern) == 0 {
-			rSrc = "^.*$"
-		} else {
-			//rSrc = "^(.*?)" // rSrc[0] is left-side all-matching
-			rSrc = "^"
-			srcLen++
-			for _, c := range pattern {
-				switch c.Type {
-
-				case '*':
-					rSrc += "(.*?)"
-
-				case '?':
-					rSrc += "(" + strings.Replace(c.Word, "?", ".", -1) + ")"
-
-				case ':': // digits
-					rSrc += "(\\d+)"
-
-				case 0:
-					rSrc += "(" + regexp.QuoteMeta(c.Word) + ")"
-				}
-				srcLen++
-			}
-			//rSrc += "(.*?)$" // rSrc[srcLen-1] is right-side all-matching
-			rSrc += "$"
-			//srcLen++
-		}
-		re, err := regexp.Compile(rSrc)
-		if err != nil {
-			return
-		}
-	*/
+func ReplaceName(filename string, pattern *regexp.Regexp, replace []Pattern, leftmostOffset int) (newname string, err error) {
 	mt := pattern.FindStringSubmatch(filename)
 	if mt == nil {
 		return filename, nil
 	}
 	srcLen := len(mt)
 	//log.Printf("matching: %v", mt)
+	//log.Printf("replace: %v", replace)
 
 	buf := ""
 	emitLastMatch := false
@@ -388,8 +357,7 @@ func ReplaceName(filename string, pattern *regexp.Regexp, replace []Pattern) (ne
 		return filename, nil
 	} else {
 		//s = mt[1]
-		//i := 2 // index of pSrc match pattern
-		i := 1
+		i := 1 // index of regexp submatch
 		for _, p := range replace {
 			switch p.Type {
 			case '?', '*': // copy the matching entry
@@ -423,7 +391,7 @@ func ReplaceName(filename string, pattern *regexp.Regexp, replace []Pattern) (ne
 						return "", ErrInvalidPattern
 					}
 				*/
-				n := p.Pos
+				n := p.Pos + leftmostOffset
 				if n < 1 || n >= srcLen {
 					return "", ErrInvalidPosition
 				}
@@ -439,6 +407,7 @@ func ReplaceName(filename string, pattern *regexp.Regexp, replace []Pattern) (ne
 				if pos == 0 {
 					pos = i
 				}
+				pos += leftmostOffset
 				if pos < 1 || len(mt) <= pos {
 					return "", ErrInvalidPosition
 				}
@@ -446,6 +415,7 @@ func ReplaceName(filename string, pattern *regexp.Regexp, replace []Pattern) (ne
 				case 'd': //
 					n, err := strconv.Atoi(mt[pos])
 					if err != nil {
+						log.Printf("HI [%v]%v, offset: %d", pos, mt[pos], leftmostOffset)
 						return "", ErrInvalidNumber
 					}
 					buf += fmt.Sprintf("%"+p.Word, n)

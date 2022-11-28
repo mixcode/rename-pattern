@@ -219,7 +219,7 @@ func TestRenamePattern(t *testing.T) {
 			}
 			//log.Printf("p1: (%s)[%v]", p.Pattern1, p1)
 			//log.Printf("p2: (%s)[%v]", p.Pattern2, p2)
-			f, e := ReplaceName(s, p1, p2)
+			f, e := ReplaceName(s, p1, p2, 0) // zero offset
 			if e != nil {
 				t.Error(e)
 				continue

@@ -12,18 +12,22 @@ import (
 var (
 	doIt           = false // actually rename the files
 	useRegExpMatch = false // use regexp match pattern
-	useStdIn       = false
-	quiet          = false
-	verbose        = false
+	useStdIn       = false // use stdin for file list
 	wholeMatch     = false // the pattern must match the whole filename
+	quiet          = false // suppress output
+	verbose        = false // more output
 
-	patternRegexp *regexp.Regexp
-	patternTo     []Pattern
+	// filename matching regexp pattern
+	matchRegexpPattern *regexp.Regexp
+	matchPatternOffset int // index offset of matching patters. increases to 1 if an automatic leftmost match pattern is added.
+
+	// replace pattern
+	replacePattern []Pattern
 )
 
 func renameOneFile(filename string) error {
 	d, f := filepath.Split(filename)
-	newf, e := ReplaceName(f, patternRegexp, patternTo)
+	newf, e := ReplaceName(f, matchRegexpPattern, replacePattern, matchPatternOffset)
 	if e != nil {
 		return e
 	}
@@ -52,40 +56,50 @@ func run() (err error) {
 		return fmt.Errorf("rename pattern must given")
 	}
 
-	extendPattern := func(s string) string { // append all-matching marks at the end
-		if wholeMatch {
-			return s
-		}
-		if len(s) == 0 {
-			return "*"
-		}
-		if s[0] != '*' {
-			s = "*" + s
-		}
-		if s[len(s)-1] != '*' {
-			s += "*"
-		}
-		return s
-	}
-
-	if useRegExpMatch {
+	// build match pattern
+	if useRegExpMatch { // input pattern is a regexp pattern
 		s := a[0]
 		if !wholeMatch {
+			// leftmost and rightmost pattern should be added
 			if len(s) > 0 && s[0] != '^' {
 				s = "^(.*?)" + s
+				matchPatternOffset = 1
 			}
 			if s[len(s)-1] != '$' {
 				s = s + "(.*?)$"
 			}
 		}
-		patternRegexp, err = regexp.Compile(s)
+		matchRegexpPattern, err = regexp.Compile(s)
 	} else {
-		patternRegexp, err = compilePattern(extendPattern(a[0]))
+		s := a[0]
+		if !wholeMatch {
+			// leftmost and rightmost pattern should be added
+			if len(s) > 0 && s[0] != '*' {
+				s = "*" + s
+				matchPatternOffset = 1
+			}
+			if s[len(s)-1] != '*' {
+				s = s + "*"
+			}
+		}
+		matchRegexpPattern, err = compilePattern(s)
 	}
 	if err != nil {
 		return
 	}
-	patternTo, err = parseReplacePattern(extendPattern(a[1]))
+
+	// build replace pattern
+	s := a[1]
+	if !wholeMatch {
+		if matchPatternOffset > 0 && len(s) > 0 && s[0] != '*' {
+			// Prepend automatic match only if the automatic leftmost match added at the search
+			s = "*" + s
+		}
+		if s[len(s)-1] != '*' {
+			s += "*"
+		}
+	}
+	replacePattern, err = parseReplacePattern(s)
 	if err != nil {
 		return
 	}
